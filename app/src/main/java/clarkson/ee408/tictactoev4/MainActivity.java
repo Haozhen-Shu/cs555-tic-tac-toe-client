@@ -84,6 +84,7 @@ public class MainActivity extends AppCompatActivity {
      * Sends a request to the server to ask for a game move made by the other player.
      */
     public void requestMove() {
+        // Check if we should request opponent's move
         if (!shouldRequestMove) {
             return; // Only request moves when it's our turn
         }
@@ -94,10 +95,24 @@ public class MainActivity extends AppCompatActivity {
         // You might want to include game state or player info
         request.setData(""); // Add any necessary data
 
+        // AppExecutors.getInstance(): Returns the singleton AppExecutors instance ; Ensures thread pools are shared across entire app
+        // AppExecutors.getInstance().networkIO(): Returns an Executor specifically for network I/O;This is a thread pool with multiple threads for concurrent network operations
+        // .execute(() -> { ... }): Submits a Runnable task to the thread pool; The thread pool picks an available thread to run it
         // Use SocketClient to send request in networkIO thread
         AppExecutors.getInstance().networkIO().execute(() -> {
             try {
+
+                // Response: Generic server response for ANY type of request; Used for simple operations that just need success/failure + message
+                // GamingResponse: Specialized for game move requests; Contains game-specific data (move position); Used ONLY for REQUEST_MOVE operations
                 GamingResponse response = socketClient.sendRequest(request, GamingResponse.class);
+
+                // Thread Architecture in Android:
+                // Main Thread(UI Thread):
+                //Created by Android system; Only thread that can touch Views; Handles user input (clicks)
+                // Runs UI animations; Must never be blocked
+                // BACKGROUND THREAD (Network IO):
+                // Created by you/AppExecutors; CANNOT touch any Views; Can do network/disk I/O;
+                // Can do CPU-intensive work; Can block/sleep/wait
 
                 // Process response in main thread
                 AppExecutors.getInstance().mainThread().execute(() -> {
@@ -144,9 +159,10 @@ public class MainActivity extends AppCompatActivity {
         request.setType(RequestType.SEND_MOVE);
         request.setData("" + move);
 
-        // Send request asynchronously using AppExecutors
+        // Send request asynchronously using AppExecutors to server on background thread
         AppExecutors.getInstance().networkIO().execute(() -> {
             try {
+                // Send request and wait for response
                 GamingResponse response = socketClient.sendRequest(request, GamingResponse.class);
                 Log.d("MainActivity", "Sent move: " + move + ", response: " + response);
 
@@ -174,17 +190,18 @@ public class MainActivity extends AppCompatActivity {
         Request request = new Request();
         request.setType(RequestType.ABORT_GAME);
 
-        // Send request asynchronously using AppExecutors
+        // Send request asynchronously using AppExecutors to server on background thread
         AppExecutors.getInstance().networkIO().execute(() -> {
             try {
+                // Background: Network call (can block)
                 Response response = socketClient.sendRequest(request, Response.class);
 
-                // Process response in main thread to show Toast
+                // Process response in main thread(UI thread) to show Toast
                 AppExecutors.getInstance().mainThread().execute(() -> {
                     if (response != null && response.getStatus() == ResponseStatus.SUCCESS) {
-                        Toast.makeText(MainActivity.this,
-                                "Game aborted successfully",
-                                Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this,     // Context
+                                "Game aborted successfully",  // Message text
+                                Toast.LENGTH_SHORT).show();   // Duration; Display it
                         Log.d("MainActivity", "Game aborted successfully");
                     } else {
                         String errorMsg = "Failed to abort game";
@@ -257,6 +274,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         // Call parent's onDestroy first
+        // Clean up game resources, stop background polling, and notify the server when the player leaves.
         super.onDestroy();
 
         // Stop the repetitive Handler
@@ -305,20 +323,20 @@ public class MainActivity extends AppCompatActivity {
 
     public void buildGuiByCode() {
         // Get width of the screen
-        Point size = new Point();
-        getWindowManager().getDefaultDisplay().getSize(size);
+        Point size = new Point();  // Creates an object to store screen dimensions
+        getWindowManager().getDefaultDisplay().getSize(size);  // Gets screen size in pixels
         int w = size.x / TicTacToe.SIDE;
 
         // Create the layout manager as a GridLayout
-        GridLayout gridLayout = new GridLayout(this);
-        gridLayout.setColumnCount(TicTacToe.SIDE);
-        gridLayout.setRowCount(TicTacToe.SIDE + 2);
+        GridLayout gridLayout = new GridLayout(this);  // Creates a GridLayout container (like an HTML table)
+        gridLayout.setColumnCount(TicTacToe.SIDE); // 3 columns for the 3x3 game board
+        gridLayout.setRowCount(TicTacToe.SIDE + 2); // 3 rows for buttons + 2 rows for status display
 
         // Create the buttons and add them to gridLayout
-        buttons = new Button[TicTacToe.SIDE][TicTacToe.SIDE];
-        ButtonHandler bh = new ButtonHandler();
+        buttons = new Button[TicTacToe.SIDE][TicTacToe.SIDE]; //2D array to store references to all TicTacToe.SIDE ^2 buttons
+        ButtonHandler bh = new ButtonHandler(); // Creates click listener for all buttons
 
-        gridLayout.setUseDefaultMargins(true);
+        gridLayout.setUseDefaultMargins(true); // Adds small gaps between buttons
 
         for (int row = 0; row < TicTacToe.SIDE; row++) {
             for (int col = 0; col < TicTacToe.SIDE; col++) {
@@ -360,38 +378,47 @@ public class MainActivity extends AppCompatActivity {
         setContentView(gridLayout);
     }
 
+    // Processes a move at the specified row/column and updates the game state.
     public void update(int row, int col) {
+        // Make the move in game logic
         int play = tttGame.play(row, col);
+
+        // Update button text (X or O)
         if (play == 1)
             buttons[row][col].setText("X");
         else if (play == 2)
             buttons[row][col].setText("O");
+
+        // Check if game ended
         if (tttGame.isGameOver()) {
             if (this.tttGame.getPlayer() == this.tttGame.whoWon()) {
                 status.setBackgroundColor(Color.GREEN);
             } else {
                 status.setBackgroundColor(Color.RED);
             }
-            enableButtons(false);
-            status.setText(tttGame.result());
-            showNewGameDialog();    // offer to play again
+            enableButtons(false);   // Disable all buttons
+            status.setText(tttGame.result());   // Show "You Win!" etc.
+            showNewGameDialog();    // Ask to play again
         } else {
             updateTurnStatus();
         }
     }
 
+    //Enables or disables all 9 game buttons.
     public void enableButtons(boolean enabled) {
         for (int row = 0; row < TicTacToe.SIDE; row++)
             for (int col = 0; col < TicTacToe.SIDE; col++)
                 buttons[row][col].setEnabled(enabled);
     }
 
+    // Clears all X/O text from buttons for a new game.
     public void resetButtons() {
         for (int row = 0; row < TicTacToe.SIDE; row++)
             for (int col = 0; col < TicTacToe.SIDE; col++)
                 buttons[row][col].setText("");
     }
 
+    // When game ends, Dialog appears with result as title, and the User chooses YES (play again) or NO (exit)
     public void showNewGameDialog() {
         AlertDialog.Builder alert = new AlertDialog.Builder(this);
         alert.setTitle(tttGame.result());
@@ -402,6 +429,8 @@ public class MainActivity extends AppCompatActivity {
         alert.show();
     }
 
+    // It's an inner class that implements View.OnClickListener - meaning it listens for clicks on
+    // the game buttons.
     private class ButtonHandler implements View.OnClickListener {
         public void onClick(View v) {
             Log.d("button clicked", "button clicked");
