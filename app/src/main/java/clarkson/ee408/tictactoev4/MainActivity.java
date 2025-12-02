@@ -37,23 +37,46 @@ public class MainActivity extends AppCompatActivity {
     private Handler handler;
     private GameMoveTaskRunnable gameMoveTaskRunnable;
 
+    //@Override means override the parent class onCreate; protected is more strict than public
+    // but less strict than private
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // call parent first
         super.onCreate(savedInstanceState);
 
         // Get player value from PairingActivity (default to 1 if not found)
+        // Intent is an Android object with the pair of key and value that:
+        // 1. Describes an operation to be performed
+        // 2. Carries data between components
         int player = getIntent().getIntExtra("player", 1);
 
+        // Initialize game model with player number
         this.tttGame = new TicTacToe(player);
+
+        //Initialize JSON serializer for network communication
         this.gson = new GsonBuilder().serializeNulls().create();
+
+        //Network Client Setup
         socketClient = SocketClient.getInstance();
+
+        //Game State Flag Setup
         shouldRequestMove = false;
 
-        buildGuiByCode();
-        updateTurnStatus();
+        //BUILD USER INTERFACE
+        buildGuiByCode(); // Create 3x3 grid of buttons
 
+        // SET INITIAL TURN STATUS
+        updateTurnStatus();  // Shows "Your Turn" or "Waiting"
+
+        //Create a message handler for scheduling tasks
+        //A Handler is an Android class that allows you to schedule code to run on a
+        //pecific thread (usually the main/UI thread).
         handler = new Handler();
+
+        //Create a polling task that will run repeatedly
         gameMoveTaskRunnable = new GameMoveTaskRunnable(this, handler);
+
+        //Start the polling loop
         handler.post(gameMoveTaskRunnable);
     }
 
